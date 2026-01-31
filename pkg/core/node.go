@@ -3,6 +3,7 @@ package core
 import (
 	"sync"
 
+	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
 )
 
@@ -21,11 +22,19 @@ type HandlerFunc func(packet *Packet)
 // Filter - a decorator for any HandlerFunc
 type Filter func(handler HandlerFunc) HandlerFunc
 
+type FeedbackPacket = rtcp.Packet
+
+type FeedbackHandlerFunc func(packet FeedbackPacket)
+
+type FeedbackFilter func(handler FeedbackHandlerFunc) FeedbackHandlerFunc
+
 // Node - Receiver or Sender or Filter (transform)
 type Node struct {
 	Codec  *Codec
 	Input  HandlerFunc
 	Output HandlerFunc
+
+	InputFeedback FeedbackHandlerFunc
 
 	id     uint32
 	childs []*Node

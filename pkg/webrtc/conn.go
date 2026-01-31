@@ -87,15 +87,37 @@ func NewConn(pc *webrtc.PeerConnection) *Conn {
 			}
 		}
 
-		if c.Mode == core.ModePassiveProducer && remote.Kind() == webrtc.RTPCodecTypeVideo {
-			go func() {
-				pkts := []rtcp.Packet{&rtcp.PictureLossIndication{MediaSSRC: uint32(remote.SSRC())}}
-				for range time.NewTicker(time.Second * 2).C {
-					if err := pc.WriteRTCP(pkts); err != nil {
+		if remote.Kind() == webrtc.RTPCodecTypeVideo {
+			ssrc := uint32(remote.SSRC())
+
+			if c.Mode == core.ModePassiveProducer {
+				// Periodic PLI for passive producer (WHIP/browser sending to go2rtc)
+				go func() {
+					pkts := []rtcp.Packet{&rtcp.PictureLossIndication{MediaSSRC: ssrc}}
+					for range time.NewTicker(time.Second * 2).C {
+						if err := pc.WriteRTCP(pkts); err != nil {
+							return
+						}
+					}
+				}()
+			}
+
+			if c.Mode == core.ModeActiveProducer {
+				// Set up Feedback handling for active producer (go2rtc sending to browser)
+				// Important ones are PLI & FIR for stream startup latency & packet loss recovery.
+				previousFeedback := track.InputFeedback
+				track.InputFeedback = func(packet core.FeedbackPacket) {
+					switch packet.(type) {
+					case *rtcp.PictureLossIndication:
+						_ = pc.WriteRTCP([]rtcp.Packet{&rtcp.PictureLossIndication{MediaSSRC: ssrc}})
+					case *rtcp.FullIntraRequest:
+						_ = pc.WriteRTCP([]rtcp.Packet{&rtcp.FullIntraRequest{MediaSSRC: ssrc}})
+					default:
+						previousFeedback(packet)
 						return
 					}
 				}
-			}()
+			}
 		}
 
 		for {

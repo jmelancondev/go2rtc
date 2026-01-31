@@ -7,7 +7,9 @@ import (
 	"github.com/AlexxIT/go2rtc/pkg/h264"
 	"github.com/AlexxIT/go2rtc/pkg/h265"
 	"github.com/AlexxIT/go2rtc/pkg/pcm"
+	"github.com/pion/rtcp"
 	"github.com/pion/rtp"
+	"github.com/pion/webrtc/v4"
 )
 
 func (c *Conn) GetMedias() []*core.Media {
@@ -86,5 +88,35 @@ func (c *Conn) AddTrack(media *core.Media, codec *core.Codec, track *core.Receiv
 	}
 
 	c.Senders = append(c.Senders, sender)
+
+	if core.GetKind(codec.Name) == core.KindVideo {
+		if rtpSender := c.getRTPSender(media.ID); rtpSender != nil {
+			go c.readRTCP(rtpSender, sender)
+		}
+	}
+
 	return nil
+}
+
+func (c *Conn) getRTPSender(mid string) *webrtc.RTPSender {
+	if tr := c.getTranseiver(mid); tr != nil {
+		return tr.Sender()
+	}
+	return nil
+}
+
+// readRTCP reads RTCP packets from the RTPSender and forwards PLI/FIR requests
+func (c *Conn) readRTCP(rtpSender *webrtc.RTPSender, sender *core.Sender) {
+	for {
+		pkts, _, err := rtpSender.ReadRTCP()
+		if err != nil {
+			return
+		}
+		for _, pkt := range pkts {
+			switch pkt.(type) {
+			case *rtcp.PictureLossIndication, *rtcp.FullIntraRequest:
+				sender.InputFeedback(pkt)
+			}
+		}
+	}
 }

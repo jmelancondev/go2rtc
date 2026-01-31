@@ -33,6 +33,7 @@ func NewReceiver(media *Media, codec *Codec) *Receiver {
 			child.Input(packet)
 		}
 	}
+	r.InputFeedback = func(packet FeedbackPacket) {} // Ignore feedback by default
 	return r
 }
 
@@ -110,6 +111,9 @@ func NewSender(media *Media, codec *Codec) *Sender {
 	}
 	s.Output = func(packet *Packet) {
 		s.Handler(packet)
+	}
+	s.InputFeedback = func(packet FeedbackPacket) {
+		s.parent.InputFeedback(packet)
 	}
 	return s
 }
